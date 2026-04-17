@@ -36,6 +36,7 @@
 #include "isr_config.h"
 #include "isr.h"
 #include "balance_app.h"
+#include "motor_app.h"
 
 // 对于TC系列默认是不支持中断嵌套的，希望支持中断嵌套需要在中断内使用 interrupt_global_enable(0); 来开启中断嵌套
 // 简单的说实际上进入中断后TC系列的硬件自动调用了 interrupt_global_disable(); 会拒绝响应任何的中断，所以需要自己手动调用 interrupt_global_enable(0); 来恢复中断的响应。

@@ -13,7 +13,7 @@
 
 /* 舵机PWM边界，需根据机械安装与实际舵机重新标定 */
 #define l_max  4000             // 左打角极限占空比
-#define mid    6000             // 舵机中值占空比
+#define mid    5500             // 舵机中值占空比
 #define r_max  7000             // 右打角极限占空比
 
 void servo_set(uint32_t duty); // 设置舵机占空比并自动限幅

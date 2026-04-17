@@ -54,7 +54,7 @@ int core0_main(void)
     balance_init();                             // 串级PID初始化
     scheduler_init();                           // 调度器初始化
     wireless_uart_init();                       // 无线串口初始化,如果不用需要注释掉
-    // motor_set_speed(400);
+//    motor_set_speed(1000);
     pit_ms_init(CCU60_CH0, 1);                  // 中断1
     // 此示例演示设置一个定时时间，单位ms请根据需要修改
     pit_ms_init(CCU60_CH1, 2);                  // 中断2
