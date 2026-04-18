@@ -12,9 +12,9 @@
 #include "zf_common_headfile.h"
 
 /* 舵机PWM边界，需根据机械安装与实际舵机重新标定 */
-#define l_max  4000             // 左打角极限占空比
-#define mid    5500             // 舵机中值占空比
-#define r_max  7000             // 右打角极限占空比
+#define l_max  4015             // 左打角极限占空比
+#define mid    5515             // 舵机中值占空比
+#define r_max  7015             // 右打角极限占空比
 
 void servo_set(uint32_t duty); // 设置舵机占空比并自动限幅
 void servo_test(void);         // 测试舵机往返摆动，便于标定极限和中值

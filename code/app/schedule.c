@@ -20,11 +20,11 @@ typedef struct {
 static task_t scheduler_task[] =
 {
 //        {servo_test,10,0},   // 舵机测试 不需要的时候关掉
-//        {motor_test,100,0}   // 电机测试 不需要的时候关掉
-        {imu_test,10,0},      // imu测试 不需要的时候关掉
-//        {motor_get_speed,10,0},  // 电机速度获取测试 不需要的时候关掉
+    //    {motor_test,100,0},   // 电机测试 不需要的时候关掉
+        // {imu_test,10,0},      // imu测试 不需要的时候关掉
+    //    {motor_get_speed,10,0},  // 电机速度获取测试 不需要的时候关掉
 //        {pid_test, 10, 0},
-          {motor_guard_update, 10, 0},  // 电机速度获取测试 不需要的时候关掉
+          {motor_guard_update, 10, 0},  // 侧倒保护
 };
 /**
  * @brief 调度器初始化函数

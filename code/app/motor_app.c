@@ -7,7 +7,6 @@
  */
 
 #include "motor_app.h"
-#include "imu_app.h"
 
 
 int16_t motor_rpm = 0;   // 电机反馈转速，单位：RPM
@@ -65,10 +64,12 @@ static uint8_t motor_roll_guard_active(void)
     if ((previous_state != motor_roll_protected) && motor_roll_protected)
     {
         printf("[motor_guard] enter roll protection, pitch=%f\r\n", pitch);
+        wireless_uart_printf("[motor_guard] enter roll protection, pitch=%f\r\n", pitch);
     }
     else if ((previous_state != motor_roll_protected) && !motor_roll_protected)
     {
         printf("[motor_guard] exit roll protection, pitch=%f\r\n", pitch);
+        wireless_uart_printf("[motor_guard] exit roll protection, pitch=%f\r\n", pitch);
     }
 
     return motor_roll_protected;
@@ -147,9 +148,9 @@ void motor_set_speed(int16_t speed)
 void motor_get_speed(void)
 {
     // 根据当前接线方向对左轮反馈取反，统一正方向定义
-    motor_rpm =  -motor_value.receive_left_speed_data;
+    motor_rpm =  -motor_value.receive_right_speed_data;
     wheel_speed = motor_rpm * RPM_TO_WHEEL;
-//    printf("rpm:%d,speed:%f\r\n", motor_rpm, wheel_speed);
+   printf("rpm:%d,speed:%f\r\n", motor_rpm, wheel_speed);
 }
 
 /*
@@ -172,5 +173,5 @@ void motor_test(void)
             duty_dir ^= 1;
     }
     motor_set_duty(duty);
-//    printf("%d\r\n",duty);
+   printf("%d\r\n",duty);
 }

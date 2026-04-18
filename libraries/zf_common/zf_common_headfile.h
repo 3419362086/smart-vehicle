@@ -127,6 +127,7 @@
 #include "scheduler.h"
 #include "imu_app.h"
 #include "balance_app.h"
+#include "uart_app.h"
 //=====================================================用户层======================================================
 
 #endif

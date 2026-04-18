@@ -120,6 +120,9 @@ void imu_test(void)
 {
 //    usart_send(roll, pitch, yaw, 1);
     //   printf("%f,%f\r\n", yaw, gyro_z_rate);
-      printf("%f,%f,%f\r\n", roll, pitch, yaw);
+    //    printf("%f,%f,%f\r\n", roll, pitch, yaw);
+       wireless_uart_printf("%f,%f,%f\r\n", roll, pitch, yaw);
+
+    // printf("%f,%f,%f\r\n", gyro_x_rate, gyro_y_rate, gyro_z_rate);
 //    JustFloat_Test_two(yaw,gyro_z_rate);
 }

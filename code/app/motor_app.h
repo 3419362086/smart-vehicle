@@ -15,8 +15,8 @@
 
 #define RPM_TO_WHEEL                (WHEEL_DIAMETER * PI / 60)      // 电机转速RPM换算为轮速的比例系数
 
-#define MOTOR_ROLL_CUTOFF_DEG   (22.0f)// 横滚角超过此值即进入保护态，单位：度
-#define MOTOR_ROLL_RECOVER_DEG  (18.0f)// 横滚角低于此值即恢复输出，单位：度
+#define MOTOR_ROLL_CUTOFF_DEG   (16.0f)// 横滚角超过此值即进入保护态，单位：度
+#define MOTOR_ROLL_RECOVER_DEG  (14.0f)// 横滚角低于此值即恢复输出，单位：度
 
 extern int16_t motor_rpm;       // 当前电机转速反馈，单位：RPM
 extern float wheel_speed;       // 当前轮速反馈，单位：m/s
