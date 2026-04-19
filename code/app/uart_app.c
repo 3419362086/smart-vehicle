@@ -3,12 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static volatile uint8 uart_pid_stream_enabled = 1U;
-static uart_pid_state_enum uart_pid_state = UART_PID_STATE_STREAMING;
-static uart_pid_target_enum uart_pid_pending_target = UART_PID_TARGET_NONE;
+/* 单行命令缓冲：仅在收到\r或\n时整行解析 */
 static char uart_pid_line_buffer[UART_PID_LINE_MAX_LEN];
-static uint32 uart_pid_line_length = 0U;
-static uint8 uart_pid_discard_line = 0U;
+static int  uart_pid_line_length = 0;
 
 static PID_T *uart_pid_get_target(uart_pid_target_enum target, const char **name)
 {
@@ -33,15 +30,9 @@ static char *uart_pid_trim(char *text)
 {
     char *end = NULL;
 
-    while ((*text == ' ') || (*text == '\t'))
-    {
-        text++;
-    }
+    while ((*text == ' ') || (*text == '\t')) { text++; }
 
-    if ('\0' == *text)
-    {
-        return text;
-    }
+    if ('\0' == *text) { return text; }
 
     end = text + strlen(text) - 1;
     while ((end > text) && ((*end == ' ') || (*end == '\t')))
@@ -60,62 +51,36 @@ static uart_pid_target_enum uart_pid_target_from_name(const char *name)
     return UART_PID_TARGET_NONE;
 }
 
-static uart_pid_parse_result_enum uart_pid_parse_params(char *text, float params[UART_PID_PARAM_COUNT])
+/* 解析5个逗号分隔浮点数；成功返回1，失败返回0 */
+static int uart_pid_parse_params(char *text, float params[UART_PID_PARAM_COUNT])
 {
     char *cursor = text;
     char *end = NULL;
-    uint32 index = 0U;
+    int i = 0;
 
-    for (index = 0U; index < UART_PID_PARAM_COUNT; ++index)
+    for (i = 0; i < (int)UART_PID_PARAM_COUNT; i++)
     {
-        while ((*cursor == ' ') || (*cursor == '\t'))
-        {
-            cursor++;
-        }
+        while ((*cursor == ' ') || (*cursor == '\t')) { cursor++; }
 
-        if ('\0' == *cursor)
-        {
-            return UART_PID_PARSE_INVALID_COUNT;
-        }
+        if ('\0' == *cursor) { return 0; }
 
-        params[index] = strtof(cursor, &end);
-        if (end == cursor)
-        {
-            if (',' == *cursor)
-            {
-                return UART_PID_PARSE_INVALID_COUNT;
-            }
-            return UART_PID_PARSE_INVALID_NUMBER;
-        }
+        params[i] = strtof(cursor, &end);
+        if (end == cursor) { return 0; }
 
-        while ((*end == ' ') || (*end == '\t'))
-        {
-            end++;
-        }
+        while ((*end == ' ') || (*end == '\t')) { end++; }
 
-        if (index < (UART_PID_PARAM_COUNT - 1U))
+        if (i < (int)(UART_PID_PARAM_COUNT - 1U))
         {
-            if ('\0' == *end)
-            {
-                return UART_PID_PARSE_INVALID_COUNT;
-            }
-            if (*end != ',')
-            {
-                return UART_PID_PARSE_INVALID_NUMBER;
-            }
+            if (*end != ',') { return 0; }
             cursor = end + 1;
         }
         else if (*end != '\0')
         {
-            if (',' == *end)
-            {
-                return UART_PID_PARSE_INVALID_COUNT;
-            }
-            return UART_PID_PARSE_INVALID_NUMBER;
+            return 0;
         }
     }
 
-    return UART_PID_PARSE_OK;
+    return 1;
 }
 
 static void uart_pid_send_current(uart_pid_target_enum target)
@@ -123,11 +88,7 @@ static void uart_pid_send_current(uart_pid_target_enum target)
     const char *name = NULL;
     PID_T *pid = uart_pid_get_target(target, &name);
 
-    if (NULL == pid)
-    {
-        wireless_uart_printf("[ERR] unknown command\r\n");
-        return;
-    }
+    if (NULL == pid) { return; }
 
     wireless_uart_printf("[OK] %s: %f,%f,%f,%f,%f\r\n",
                          name, pid->kp, pid->ki, pid->kd, pid->target, pid->limit);
@@ -137,105 +98,80 @@ static void uart_pid_apply_params(uart_pid_target_enum target, const float param
 {
     PID_T *pid = uart_pid_get_target(target, NULL);
 
-    if (NULL == pid)
-    {
-        return;
-    }
+    if (NULL == pid) { return; }
 
-    pid->kp = params[0];
-    pid->ki = params[1];
-    pid->kd = params[2];
+    pid->kp     = params[0];
+    pid->ki     = params[1];
+    pid->kd     = params[2];
     pid->target = params[3];
-    pid->limit = params[4];
+    pid->limit  = params[4];
     pid_reset(pid);
 }
 
+/*
+ * @brief 处理一行命令
+ * @note  未知命令、错误格式、错误参数一律静默丢弃，不发回复，避免污染串口。
+ *        仅在 stop / check / change 成功时回复 [OK] xxx。
+ */
 static void uart_pid_handle_line(char *line)
 {
     float params[UART_PID_PARAM_COUNT];
     char *command = uart_pid_trim(line);
     uart_pid_target_enum target = UART_PID_TARGET_NONE;
     const char *name = NULL;
+    char *open_paren = NULL;
+    char *close_paren = NULL;
+    char *target_name = NULL;
 
-    if ('\0' == *command)
-    {
-        return;
-    }
+    if ('\0' == *command) { return; }
 
+    /* stop：紧急停车 */
     if (0 == strcmp(command, "stop"))
     {
-        uart_pid_stream_enabled = 0U;
-        uart_pid_state = UART_PID_STATE_PAUSED;
-        uart_pid_pending_target = UART_PID_TARGET_NONE;
-        wireless_uart_printf("[OK] stream stopped\r\n");
+        motor_stop();
+        wireless_uart_printf("[OK] motor stopped\r\n");
         return;
     }
 
-    if (0 == strcmp(command, "start"))
-    {
-        uart_pid_stream_enabled = 1U;
-        uart_pid_state = UART_PID_STATE_STREAMING;
-        uart_pid_pending_target = UART_PID_TARGET_NONE;
-        wireless_uart_printf("[OK] stream started\r\n");
-        return;
-    }
-
-    if (UART_PID_STATE_WAITING_PARAM == uart_pid_state)
-    {
-        switch (uart_pid_parse_params(command, params))
-        {
-            case UART_PID_PARSE_OK:
-                uart_pid_apply_params(uart_pid_pending_target, params);
-                uart_pid_get_target(uart_pid_pending_target, &name);
-                wireless_uart_printf("[OK] %s updated\r\n", name);
-                uart_pid_pending_target = UART_PID_TARGET_NONE;
-                uart_pid_state = UART_PID_STATE_PAUSED;
-                break;
-            case UART_PID_PARSE_INVALID_COUNT:
-                wireless_uart_printf("[ERR] invalid param count\r\n");
-                break;
-            case UART_PID_PARSE_INVALID_NUMBER:
-            default:
-                wireless_uart_printf("[ERR] invalid number\r\n");
-                break;
-        }
-        return;
-    }
-
+    /* check-xxx_pid：打印当前PID参数 */
     if (0 == strncmp(command, "check-", 6))
     {
-        target = uart_pid_target_from_name(command + 6);
-        if (UART_PID_TARGET_NONE == target)
-        {
-            wireless_uart_printf("[ERR] unknown command\r\n");
-            return;
-        }
-
-        uart_pid_stream_enabled = 0U;
-        uart_pid_state = UART_PID_STATE_PAUSED;
-        uart_pid_pending_target = UART_PID_TARGET_NONE;
+        target = uart_pid_target_from_name(uart_pid_trim(command + 6));
+        if (UART_PID_TARGET_NONE == target) { return; }
         uart_pid_send_current(target);
         return;
     }
 
+    /* change-xxx_pid(p1,p2,p3,p4,p5)：单行修改并立即应用 */
     if (0 == strncmp(command, "change-", 7))
     {
-        target = uart_pid_target_from_name(command + 7);
-        if (UART_PID_TARGET_NONE == target)
+        target_name = command + 7;
+
+        open_paren  = strchr(target_name, '(');
+        close_paren = strrchr(target_name, ')');
+        if ((NULL == open_paren) || (NULL == close_paren) || (close_paren < open_paren))
         {
-            wireless_uart_printf("[ERR] unknown command\r\n");
             return;
         }
 
-        uart_pid_stream_enabled = 0U;
-        uart_pid_state = UART_PID_STATE_WAITING_PARAM;
-        uart_pid_pending_target = target;
+        *open_paren  = '\0';   /* 截断目标名 */
+        *close_paren = '\0';   /* 截断参数串 */
+
+        target = uart_pid_target_from_name(uart_pid_trim(target_name));
+        if (UART_PID_TARGET_NONE == target) { return; }
+
+        if (0 == uart_pid_parse_params(uart_pid_trim(open_paren + 1), params))
+        {
+            return;
+        }
+
+        uart_pid_apply_params(target, params);
         uart_pid_get_target(target, &name);
-        wireless_uart_printf("[OK] %s ready\r\n", name);
+        wireless_uart_printf("[OK] %s updated\r\n", name);
         return;
     }
 
-    wireless_uart_printf("[ERR] unknown command\r\n");
+    /* 未知命令：静默丢弃 */
 }
 
 void wireless_uart_printf(const char *format, ...)
@@ -250,61 +186,32 @@ void wireless_uart_printf(const char *format, ...)
     wireless_uart_send_string(buffer);
 }
 
-uint8 wireless_uart_pid_stream_enabled(void)
-{
-    return uart_pid_stream_enabled;
-}
-
 void wireless_uart_pid_service(void)
 {
-    uint8 rx_buffer[WIRELESS_UART_BUFFER_SIZE];
-    uint32 rx_len = wireless_uart_read_buffer(rx_buffer, sizeof(rx_buffer));
-    uint32 index = 0U;
+    unsigned char rx_buffer[WIRELESS_UART_BUFFER_SIZE];
+    int rx_len = (int)wireless_uart_read_buffer(rx_buffer, sizeof(rx_buffer));
+    int i = 0;
 
-    for (index = 0U; index < rx_len; ++index)
+    for (i = 0; i < rx_len; i++)
     {
-        char ch = (char)rx_buffer[index];
+        char ch = (char)rx_buffer[i];
 
+        /* 收到行结束符：整行解析；空行直接跳过 */
         if (('\r' == ch) || ('\n' == ch))
         {
-            if (0U != uart_pid_discard_line)
+            if (0 != uart_pid_line_length)
             {
-                uart_pid_discard_line = 0U;
-                uart_pid_line_length = 0U;
-                uart_pid_line_buffer[0] = '\0';
-                continue;
+                uart_pid_line_buffer[uart_pid_line_length] = '\0';
+                uart_pid_handle_line(uart_pid_line_buffer);
+                uart_pid_line_length = 0;
             }
-
-            if (0U == uart_pid_line_length)
-            {
-                continue;
-            }
-
-            uart_pid_line_buffer[uart_pid_line_length] = '\0';
-            uart_pid_handle_line(uart_pid_line_buffer);
-            uart_pid_line_length = 0U;
-            uart_pid_line_buffer[0] = '\0';
             continue;
         }
 
-        if (0U != uart_pid_discard_line)
-        {
-            continue;
-        }
-
-        if (uart_pid_line_length < (UART_PID_LINE_MAX_LEN - 1U))
+        /* 缓冲未满则累积；满了静默丢弃多余字节，等下次\r/\n重新开始 */
+        if (uart_pid_line_length < (int)(UART_PID_LINE_MAX_LEN - 1U))
         {
             uart_pid_line_buffer[uart_pid_line_length++] = ch;
-        }
-        else
-        {
-            uart_pid_stream_enabled = 0U;
-            uart_pid_state = UART_PID_STATE_PAUSED;
-            uart_pid_pending_target = UART_PID_TARGET_NONE;
-            uart_pid_discard_line = 1U;
-            uart_pid_line_length = 0U;
-            uart_pid_line_buffer[0] = '\0';
-            wireless_uart_printf("[ERR] command too long\r\n");
         }
     }
 }

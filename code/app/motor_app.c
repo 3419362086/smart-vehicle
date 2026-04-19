@@ -17,6 +17,11 @@ static uint8_t motor_last_command_is_speed = 0;   // 0: 最近一次是占空比
 static int16_t motor_last_speed_cmd = 0;          // 最近一次速度模式目标值
 static int16_t motor_speed_before_protect = 0;    // 进入保护前缓存的速度目标值
 
+/* stop 命令触发的强制锁定期：锁定期内 motor_guard_update 拒绝任何恢复动作 */
+#define MOTOR_STOP_LOCK_MS      (4000U)
+static uint8_t  motor_stop_locked     = 0;   // 1: 当前处于 stop 锁定期
+static uint32_t motor_stop_lock_start = 0;   // 锁定开始时的 uwtick 时间戳 (ms)
+
 /*
  * @brief 保护触发后按最近一次控制模式主动下发0命令
  */
@@ -84,7 +89,21 @@ static uint8_t motor_roll_guard_active(void)
 void motor_guard_update(void)
 {
     uint8_t previous_state = motor_roll_protected;
-    uint8_t current_state = motor_roll_guard_active();
+    uint8_t current_state = 0;
+
+    // stop 命令的强制锁定期（见 MOTOR_STOP_LOCK_MS）：忽略一切横滚判断，保持停车态。
+    // 无符号溢出下差值运算依然正确，只要锁定时长 << 2^31 ms 就安全。
+    if (motor_stop_locked)
+    {
+        if ((uwtick - motor_stop_lock_start) < MOTOR_STOP_LOCK_MS)
+        {
+            motor_roll_protected = 1;
+            return;
+        }
+        motor_stop_locked = 0;   // 锁定期已过，恢复常规横滚保护判断
+    }
+
+    current_state = motor_roll_guard_active();
 
     // 只在“正常态 -> 保护态”的边沿主动停机一次，避免每个 2ms 周期都重复打 0 命令。
     if ((!previous_state) && current_state)
@@ -166,6 +185,41 @@ void motor_set_speed(int16_t speed)
     }
 
     small_driver_set_speed((int16)speed, (int16)speed);
+}
+
+/*
+ * @brief 立即停车（软暂停 + 强制锁定 MOTOR_STOP_LOCK_MS 毫秒）
+ * @note  行为：
+ *        1. 缓存当前速度目标为"待恢复点"（motor_last_speed_cmd 故意不清零）
+ *        2. 主动进入横滚保护态
+ *        3. 启动强制锁定窗口：锁定期内 motor_guard_update 忽略一切恢复
+ *        4. 锁定期过后按常规横滚保护机制判断是否恢复：
+ *           - |pitch| <= MOTOR_ROLL_RECOVER_DEG (10°)：自动恢复 stop 前速度
+ *           - |pitch| 在 RECOVER 与 CUTOFF 之间：迟滞区，继续停车
+ *           - |pitch| >  MOTOR_ROLL_CUTOFF_DEG  (21°)：继续停车，等车体回正
+ * @warning 这里故意不清零 motor_last_speed_cmd：
+ *          若清零，stop 恢复后再次触发"横滚保护进入边沿"时，
+ *          motor_guard_update 会用 motor_last_speed_cmd (=0) 覆盖 motor_speed_before_protect，
+ *          导致横滚保护退出后无法恢复到原速度（车不动）。
+ */
+void motor_stop(void)
+{
+    // 仅速度模式且当前速度非0时，缓存为待恢复点；否则保留旧的恢复点（可能是 0）
+    if (motor_last_command_is_speed && (motor_last_speed_cmd != 0))
+    {
+        motor_speed_before_protect = motor_last_speed_cmd;
+    }
+    // 注意：不清零 motor_last_speed_cmd，原因见函数顶部 @warning
+
+    // 主动设保护态
+    motor_roll_protected = 1;
+
+    // 启动强制锁定窗口
+    motor_stop_locked     = 1;
+    motor_stop_lock_start = uwtick;
+
+    small_driver_set_speed(0, 0);
+    small_driver_set_duty(0, 0);
 }
 
 /*

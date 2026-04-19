@@ -95,11 +95,6 @@ void balance_reset_all_pid(void)
  */
 void pid_test(void)
 {
-    if (wireless_uart_pid_stream_enabled() == 0)
-    {
-        return;
-    }
-
     // 侧倒保护期间暂停 5 路波形连续输出，退出保护后自动恢复。
     if (motor_guard_is_active())
     {
@@ -107,5 +102,7 @@ void pid_test(void)
     }
 
     wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
-                         target_gyro_rate, gyro_y_rate, gyro_pid.error, servo_output, pitch);
+                        target_gyro_rate, gyro_y_rate, gyro_pid.error, servo_output, pitch);
+    // wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
+                     //    steering_pid.kp, steering_pid.ki, steering_pid.kd, steering_pid.target, steering_pid.limit);
 }
