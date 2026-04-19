@@ -72,6 +72,19 @@ void balance_gyro_loop(void)
 }
 
 /*
+ * @brief 清空三个串级PID的积分项与历史状态
+ */
+void balance_reset_all_pid(void)
+{
+    pid_reset(&steering_pid);
+    pid_reset(&angle_pid);
+    pid_reset(&gyro_pid);
+    target_angle = 0.0f;
+    target_gyro_rate = 0.0f;
+    servo_output = 0.0f;
+}
+
+/*
  * @brief 输出PID调试量，便于上位机观察串级环路状态
  */
 void pid_test(void)

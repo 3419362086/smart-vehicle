@@ -7,12 +7,15 @@
  */
 
 #include "motor_app.h"
+#include "balance_app.h"
 
 
 int16_t motor_rpm = 0;   // 电机反馈转速，单位：RPM
 float wheel_speed = 0;   // 由转速换算得到的轮速，单位：m/s
 static uint8_t motor_roll_protected = 1;   // 上电默认保护，等待横滚角回到安全区再恢复输出
 static uint8_t motor_last_command_is_speed = 0;   // 0: 最近一次是占空比命令 1: 最近一次是速度命令
+static int16_t motor_last_speed_cmd = 0;          // 最近一次速度模式目标值
+static int16_t motor_speed_before_protect = 0;    // 进入保护前缓存的速度目标值
 
 /*
  * @brief 保护触发后按最近一次控制模式主动下发0命令
@@ -45,7 +48,7 @@ static uint8_t motor_roll_guard_active(void)
     }
 
     // 注意：当前工程中 pitch 表示物理横滚角，而非常规命名中的俯仰角。
-    // 这里用 22/18 两个阈值形成迟滞，避免角度在临界值附近抖动时电机反复开关。
+    // 这里使用 cut-off / recover 两个阈值形成迟滞，避免角度在临界值附近抖动时电机反复开关。
     if (motor_roll_protected)
     {
         if (roll_abs <= MOTOR_ROLL_RECOVER_DEG)
@@ -86,7 +89,19 @@ void motor_guard_update(void)
     // 只在“正常态 -> 保护态”的边沿主动停机一次，避免每个 2ms 周期都重复打 0 命令。
     if ((!previous_state) && current_state)
     {
+        if (motor_last_command_is_speed)
+        {
+            motor_speed_before_protect = motor_last_speed_cmd;
+        }
         motor_force_stop_by_last_mode();
+    }
+    else if (previous_state && (!current_state))
+    {
+        if (motor_last_command_is_speed && (motor_speed_before_protect != 0))
+        {
+            balance_reset_all_pid();
+            small_driver_set_speed((int16)motor_speed_before_protect, (int16)motor_speed_before_protect);
+        }
     }
 }
 
@@ -132,6 +147,8 @@ void motor_set_speed(int16_t speed)
     // 限幅保护
     if(speed > 3000) speed = 3000;
     if(speed < -3000) speed = -3000;
+
+    motor_last_speed_cmd = speed;
 
     // 如果此刻已经处于保护态，新的速度命令直接压成 0。
     if (motor_roll_guard_active())
