@@ -67,7 +67,8 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
     interrupt_global_enable(0);                     // 开启中断嵌套
     pit_clear_flag(CCU61_CH0);
 
-    balance_angle_loop();                           // 中环 角度环 10ms
+    // 只调内环时先停掉中环，避免 target_gyro_rate 被上层环路持续改写。
+    balance_angle_loop();                        // 中环 角度环 10ms
 
 }
 
@@ -76,7 +77,8 @@ IFX_INTERRUPT(cc61_pit_ch1_isr, 0, CCU6_1_CH1_ISR_PRIORITY)
     interrupt_global_enable(0);                     // 开启中断嵌套
     pit_clear_flag(CCU61_CH1);
 
-    balance_steering_loop(0.0f);                    // 外环 转向环 20ms
+    // 只调内环时先停掉外环，保证当前测试只看角速度闭环本身。
+    balance_steering_loop(0.0f);                 // 外环 转向环 20ms
 
 }
 // **************************** PIT中断函数 ****************************
