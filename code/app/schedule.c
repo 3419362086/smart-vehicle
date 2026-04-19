@@ -23,8 +23,9 @@ static task_t scheduler_task[] =
     //    {motor_test,100,0},   // 电机测试 不需要的时候关掉
         // {imu_test,10,0},      // imu测试 不需要的时候关掉
     //    {motor_get_speed,10,0},  // 电机速度获取测试 不需要的时候关掉
-//        {pid_test, 10, 0},
-          {motor_guard_update, 10, 0},  // 侧倒保护
+        {wireless_uart_pid_service, 5, 0},  // 先处理无线PID命令
+        {pid_test, 10, 0},                  // 再按状态发送PID测试流
+        {motor_guard_update, 10, 0},        // 侧倒保护
 };
 /**
  * @brief 调度器初始化函数
@@ -35,7 +36,6 @@ void scheduler_init(void)
     // 计算任务数组的元素个数，并将结果存储在 task_num 中
     task_num = sizeof(scheduler_task) / sizeof(task_t);
 }
-
 /**
  * @brief 调度器运行函数
  * @note 轮询所有任务，周期到达后执行对应函数
@@ -49,7 +49,7 @@ void scheduler_run(void)
         //uint32_t now_time = system_getval_ms();
         uint32_t now_time = uwtick;
         // 检查当前时间是否达到任务的执行时间
-        if (now_time >= scheduler_task[i].rate_ms + scheduler_task[i].last_run)
+        if ((uint32_t)(now_time - scheduler_task[i].last_run) >= scheduler_task[i].rate_ms)
         {
             // 更新任务的上次运行时间为当前时间
             scheduler_task[i].last_run = now_time;
@@ -59,5 +59,3 @@ void scheduler_run(void)
         }
     }
 }
-
-
