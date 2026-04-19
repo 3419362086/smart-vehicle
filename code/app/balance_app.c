@@ -82,5 +82,6 @@ void pid_test(void)
         return;
     }
 
-    JustFloat_Test_five(pitch, gyro_y_rate, target_angle, target_gyro_rate, servo_output);
+    wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
+                         pitch, gyro_y_rate, target_angle, target_gyro_rate, servo_output);
 }
