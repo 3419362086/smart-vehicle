@@ -11,7 +11,7 @@
 
 #include "zf_common_headfile.h"
 
-extern uint32_t uwtick;        // 系统毫秒节拍，由中断或定时基准更新
+extern volatile uint32_t uwtick;   // 系统毫秒节拍，由中断或定时基准更新
 void scheduler_init(void);     // 初始化任务数量统计
 void scheduler_run(void);      // 轮询任务表，执行到期任务
 

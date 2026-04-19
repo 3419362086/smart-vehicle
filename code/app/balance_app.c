@@ -9,6 +9,7 @@
  */
 
 #include "balance_app.h"
+#include "uart_app.h"
 
 /* 三个PID实例 */
 PID_T steering_pid;         // 转向环：转向误差 -> 目标角度
@@ -89,5 +90,11 @@ void balance_reset_all_pid(void)
  */
 void pid_test(void)
 {
-    JustFloat_Test_five(pitch, gyro_y_rate, target_angle, target_gyro_rate, servo_output);
+    if (!wireless_uart_pid_stream_enabled())
+    {
+        return;
+    }
+
+    wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
+                         pitch, gyro_y_rate, target_angle, target_gyro_rate, servo_output);
 }
