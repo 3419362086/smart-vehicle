@@ -7,8 +7,8 @@
 
 #include "scheduler.h"
 
-uint8_t task_num;      // 当前调度器已注册任务数量
-uint32_t uwtick = 0;   // 全局毫秒节拍计数
+uint8_t task_num;               // 当前调度器已注册任务数量
+volatile uint32_t uwtick = 0;   // 全局毫秒节拍计数（由中断异步更新）
 
 typedef struct {
     void (*task_func)(void); // 任务入口函数
