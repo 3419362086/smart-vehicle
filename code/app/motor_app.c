@@ -106,6 +106,15 @@ void motor_guard_update(void)
 }
 
 /*
+ * @brief 查询当前横滚保护状态
+ * @return 1 表示处于保护态，0 表示允许输出
+ */
+uint8_t motor_guard_is_active(void)
+{
+    return motor_roll_protected;
+}
+
+/*
  * @brief 初始化电机驱动通信接口
  */
 void motor_init(void)

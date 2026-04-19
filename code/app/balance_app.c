@@ -9,7 +9,6 @@
  */
 
 #include "balance_app.h"
-#include "uart_app.h"
 
 /* 三个PID实例 */
 PID_T steering_pid;         // 转向环：转向误差 -> 目标角度
@@ -86,15 +85,27 @@ void balance_reset_all_pid(void)
 }
 
 /*
- * @brief 输出PID调试量，便于上位机观察串级环路状态
+ * @brief 输出内环调参需要观察的关键量
+ * @note  通道顺序固定为：
+ *        1. target_gyro_rate：内环目标角速度
+ *        2. gyro_y_rate：当前角速度反馈
+ *        3. gyro_pid.error：内环角速度误差
+ *        4. servo_output：内环输出控制量
+ *        5. pitch：当前横滚角，辅助判断舵机是否已把车体带偏
  */
 void pid_test(void)
 {
-    if (!wireless_uart_pid_stream_enabled())
+    if (wireless_uart_pid_stream_enabled() == 0)
+    {
+        return;
+    }
+
+    // 侧倒保护期间暂停 5 路波形连续输出，退出保护后自动恢复。
+    if (motor_guard_is_active())
     {
         return;
     }
 
     wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
-                         pitch, gyro_y_rate, target_angle, target_gyro_rate, servo_output);
+                         target_gyro_rate, gyro_y_rate, gyro_pid.error, servo_output, pitch);
 }
