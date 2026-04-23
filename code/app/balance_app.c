@@ -9,6 +9,7 @@
  */
 
 #include "balance_app.h"
+#include "motor_app.h"
 
 /* 三个PID实例 */
 PID_T steering_pid;         // 转向环：转向误差 -> 目标角度
@@ -68,10 +69,29 @@ void balance_angle_loop(void)
  */
 void balance_gyro_loop(void)
 {
+    if (motor_guard_is_active())
+    {
+        balance_hold_servo_center();
+        return;
+    }
+
     // 根据角速度误差输出最终舵机控制量
     pid_set_target(&gyro_pid, target_gyro_rate);
     servo_output = pid_calculate_positional(&gyro_pid, gyro_y_rate);
     servo_set((uint32_t)(mid + (int32_t)servo_output));
+}
+
+/*
+ * @brief 保护态期间强制舵机回中，并清空当前级联目标
+ * @note  不在这里 reset PID，是为了避免每个 2ms 周期都把 PID 历史值清零；
+ *        PID 复位仍由保护状态切换边沿统一处理。
+ */
+void balance_hold_servo_center(void)
+{
+    target_angle = 0.0f;
+    target_gyro_rate = 0.0f;
+    servo_output = 0.0f;
+    servo_set(mid);
 }
 
 /*
@@ -83,9 +103,7 @@ void balance_reset_all_pid(void)
     pid_reset(&steering_pid);
     pid_reset(&angle_pid);
     pid_reset(&gyro_pid);
-    target_angle = 0.0f;
-    target_gyro_rate = 0.0f;
-    servo_output = 0.0f;
+    balance_hold_servo_center();
     steering_reset_outer_loop_delay();
 }
 

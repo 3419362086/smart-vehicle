@@ -17,6 +17,7 @@ static uint8_t motor_roll_recover_pending = 0; // 1: 当前正在等待“连续
 static uint8_t motor_last_command_is_speed = 0;   // 0: 最近一次是占空比命令 1: 最近一次是速度命令
 static int16_t motor_last_speed_cmd = 0;          // 最近一次速度模式目标值
 static int16_t motor_speed_before_protect = 0;    // 进入保护前缓存的速度目标值
+static uint8_t motor_speed_resume_ready = 0;      // 1: 当前存在可在退出保护后恢复的速度命令
 static uint32_t motor_roll_recover_start = 0;     // 回到恢复阈值内后的起始时刻，单位：毫秒
 
 /* stop 命令触发的强制锁定期：锁定期内 motor_guard_update 拒绝任何恢复动作 */
@@ -119,6 +120,7 @@ void motor_guard_update(void)
         {
             motor_roll_protected = 1;
             motor_roll_recover_pending = 0;
+            balance_hold_servo_center();
             return;
         }
         motor_stop_locked = 0;   // 锁定期已过，恢复常规横滚保护判断
@@ -126,10 +128,15 @@ void motor_guard_update(void)
 
     current_state = motor_roll_guard_active();
 
+    if (current_state)
+    {
+        balance_hold_servo_center();
+    }
+
     // 只在“正常态 -> 保护态”的边沿主动停机一次，避免每个 2ms 周期都重复打 0 命令。
     if ((!previous_state) && current_state)
     {
-        if (motor_last_command_is_speed)
+        if (motor_last_command_is_speed && motor_speed_resume_ready)
         {
             motor_speed_before_protect = motor_last_speed_cmd;
         }
@@ -137,9 +144,9 @@ void motor_guard_update(void)
     }
     else if (previous_state && (!current_state))
     {
-        if (motor_last_command_is_speed && (motor_speed_before_protect != 0))
+        balance_reset_all_pid();
+        if (motor_last_command_is_speed && motor_speed_resume_ready)
         {
-            balance_reset_all_pid();
             small_driver_set_speed((int16)motor_speed_before_protect, (int16)motor_speed_before_protect);
         }
     }
@@ -170,6 +177,7 @@ void motor_set_duty(int16_t duty)
 {
     // 记录最近一次不是速度模式，供保护触发时决定补发 duty=0。
     motor_last_command_is_speed = 0;
+    motor_speed_resume_ready = 0;
 
     // 限幅 duty最大为-10000 ~ 10000 自行判断限幅
     if(duty > 5000) duty = 5000;
@@ -198,6 +206,8 @@ void motor_set_speed(int16_t speed)
     if(speed < -3000) speed = -3000;
 
     motor_last_speed_cmd = speed;
+    motor_speed_before_protect = speed;
+    motor_speed_resume_ready = (speed != 0);
 
     // 如果此刻已经处于保护态，新的速度命令直接压成 0。
     if (motor_roll_guard_active())
@@ -229,12 +239,14 @@ void motor_stop(void)
     if (motor_last_command_is_speed && (motor_last_speed_cmd != 0))
     {
         motor_speed_before_protect = motor_last_speed_cmd;
+        motor_speed_resume_ready = 1;
     }
     // 注意：不清零 motor_last_speed_cmd，原因见函数顶部 @warning
 
     // 主动设保护态
     motor_roll_protected = 1;
     motor_roll_recover_pending = 0;
+    balance_hold_servo_center();
 
     // 启动强制锁定窗口
     motor_stop_locked     = 1;
