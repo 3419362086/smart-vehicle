@@ -17,6 +17,7 @@
 
 #define MOTOR_ROLL_CUTOFF_DEG   (21.0f)// 横滚角超过此值即进入保护态，单位：度
 #define MOTOR_ROLL_RECOVER_DEG  (10.0f)// 横滚角低于此值即恢复输出，单位：度
+#define MOTOR_ROLL_RECOVER_DELAY_MS  (4000U) // 横滚角回到恢复阈值内后，需连续保持多久才退出保护，单位：毫秒
 
 extern int16_t motor_rpm;       // 当前电机转速反馈，单位：RPM
 extern float wheel_speed;       // 当前轮速反馈，单位：m/s

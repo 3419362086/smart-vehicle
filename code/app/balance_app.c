@@ -22,17 +22,20 @@ float servo_output = 0;         // 角速度环输出的舵机PWM偏移量
 
 /*
  * @brief 串级PID初始化
+ * @note  初始化 PID 参数后，同时复位转向外环的延迟/软启动接入状态
  */
 void balance_init(void)
 {
     //                          kp    ki    kd    target  limit
     pid_init(&steering_pid,     1.0f, 0.0f, 0.0f, 0.0f,  30.0f);      // 输出限幅: ±30度
-    pid_init(&angle_pid,        30.0f, 0.0f, 1.0f, 0.0f,  500.0f);     // 输出限幅: ±200度/秒
-    pid_init(&gyro_pid,         2.0f, 0.0f, 0.0f, 0.0f,  15000.0f);    // 只用P，机械阻尼足够
+    pid_init(&angle_pid,        13.0f, 0.0f, 0.6f, 0.0f,  500.0f);     // 输出限幅: ±200度/秒
+    pid_init(&gyro_pid,         8.0f, 0.0f, 0.0f, 0.0f,  15000.0f);    // 只用P，机械阻尼足够
 
     // 角度环积分限幅：防止积分饱和
     // 限幅 = 输出限幅/Ki ≈ 200/0.8 = 250，保守取±200
     pid_app_limit_integral(&angle_pid, -200.0f, 200.0f);
+
+    steering_init();   // 转向外环默认先延迟，再按软启动斜坡慢慢接入
 }
 
 /*
@@ -73,6 +76,7 @@ void balance_gyro_loop(void)
 
 /*
  * @brief 清空三个串级PID的积分项与历史状态
+ * @note  PID 复位后重新开始转向外环延迟与软启动，避免保护恢复时上层目标突然跳变
  */
 void balance_reset_all_pid(void)
 {
@@ -82,6 +86,7 @@ void balance_reset_all_pid(void)
     target_angle = 0.0f;
     target_gyro_rate = 0.0f;
     servo_output = 0.0f;
+    steering_reset_outer_loop_delay();
 }
 
 /*
@@ -100,9 +105,9 @@ void pid_test(void)
     {
         return;
     }
-
-    wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
-                        target_gyro_rate, gyro_y_rate, gyro_pid.error, servo_output, pitch);
+    //调内环
     // wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
-                     //    steering_pid.kp, steering_pid.ki, steering_pid.kd, steering_pid.target, steering_pid.limit);
+                        // target_gyro_rate, gyro_y_rate, gyro_pid.error, servo_output, pitch);
+    wireless_uart_printf("%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
+                        wheel_speed, yaw, gyro_z_rate, pitch, servo_output);
 }

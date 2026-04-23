@@ -12,10 +12,12 @@
 
 int16_t motor_rpm = 0;   // 电机反馈转速，单位：RPM
 float wheel_speed = 0;   // 由转速换算得到的轮速，单位：m/s
-static uint8_t motor_roll_protected = 1;   // 上电默认保护，等待横滚角回到安全区再恢复输出
+static uint8_t motor_roll_protected = 1;   // 上电默认保护，等待横滚角回到安全区并稳定一段时间后再恢复输出
+static uint8_t motor_roll_recover_pending = 0; // 1: 当前正在等待“连续回正一段时间后退出保护”
 static uint8_t motor_last_command_is_speed = 0;   // 0: 最近一次是占空比命令 1: 最近一次是速度命令
 static int16_t motor_last_speed_cmd = 0;          // 最近一次速度模式目标值
 static int16_t motor_speed_before_protect = 0;    // 进入保护前缓存的速度目标值
+static uint32_t motor_roll_recover_start = 0;     // 回到恢复阈值内后的起始时刻，单位：毫秒
 
 /* stop 命令触发的强制锁定期：锁定期内 motor_guard_update 拒绝任何恢复动作 */
 #define MOTOR_STOP_LOCK_MS      (4000U)
@@ -54,11 +56,27 @@ static uint8_t motor_roll_guard_active(void)
 
     // 注意：当前工程中 pitch 表示物理横滚角，而非常规命名中的俯仰角。
     // 这里使用 cut-off / recover 两个阈值形成迟滞，避免角度在临界值附近抖动时电机反复开关。
+    // 同时退出保护还要求“连续回正 MOTOR_ROLL_RECOVER_DELAY_MS 毫秒”，防止刚过阈值就立刻恢复。
     if (motor_roll_protected)
     {
         if (roll_abs <= MOTOR_ROLL_RECOVER_DEG)
         {
-            motor_roll_protected = 0;
+            // 第一次进入恢复候选区时只记时，不立刻退出保护。
+            if (!motor_roll_recover_pending)
+            {
+                motor_roll_recover_pending = 1;
+                motor_roll_recover_start = uwtick;
+            }
+            else if ((uint32_t)(uwtick - motor_roll_recover_start) >= MOTOR_ROLL_RECOVER_DELAY_MS)
+            {
+                motor_roll_protected = 0;
+                motor_roll_recover_pending = 0;
+            }
+        }
+        else
+        {
+            // 只要中途再次超出恢复阈值，就清空已累计的稳定时间，重新计时。
+            motor_roll_recover_pending = 0;
         }
     }
     else
@@ -66,6 +84,7 @@ static uint8_t motor_roll_guard_active(void)
         if (roll_abs >= MOTOR_ROLL_CUTOFF_DEG)
         {
             motor_roll_protected = 1;
+            motor_roll_recover_pending = 0;
         }
     }
 
@@ -85,6 +104,7 @@ static uint8_t motor_roll_guard_active(void)
 
 /*
  * @brief 刷新横滚保护状态，并在首次进入保护时主动下发0命令
+ * @note  退出保护除了满足恢复角度阈值外，还要求连续稳定保持 MOTOR_ROLL_RECOVER_DELAY_MS 毫秒
  */
 void motor_guard_update(void)
 {
@@ -98,6 +118,7 @@ void motor_guard_update(void)
         if ((uwtick - motor_stop_lock_start) < MOTOR_STOP_LOCK_MS)
         {
             motor_roll_protected = 1;
+            motor_roll_recover_pending = 0;
             return;
         }
         motor_stop_locked = 0;   // 锁定期已过，恢复常规横滚保护判断
@@ -194,7 +215,7 @@ void motor_set_speed(int16_t speed)
  *        2. 主动进入横滚保护态
  *        3. 启动强制锁定窗口：锁定期内 motor_guard_update 忽略一切恢复
  *        4. 锁定期过后按常规横滚保护机制判断是否恢复：
- *           - |pitch| <= MOTOR_ROLL_RECOVER_DEG (10°)：自动恢复 stop 前速度
+ *           - |pitch| <= MOTOR_ROLL_RECOVER_DEG (10°) 且连续保持 MOTOR_ROLL_RECOVER_DELAY_MS：自动恢复 stop 前速度
  *           - |pitch| 在 RECOVER 与 CUTOFF 之间：迟滞区，继续停车
  *           - |pitch| >  MOTOR_ROLL_CUTOFF_DEG  (21°)：继续停车，等车体回正
  * @warning 这里故意不清零 motor_last_speed_cmd：
@@ -213,6 +234,7 @@ void motor_stop(void)
 
     // 主动设保护态
     motor_roll_protected = 1;
+    motor_roll_recover_pending = 0;
 
     // 启动强制锁定窗口
     motor_stop_locked     = 1;

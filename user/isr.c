@@ -77,8 +77,8 @@ IFX_INTERRUPT(cc61_pit_ch1_isr, 0, CCU6_1_CH1_ISR_PRIORITY)
     interrupt_global_enable(0);                     // 开启中断嵌套
     pit_clear_flag(CCU61_CH1);
 
-    // 只调内环时先停掉外环，保证当前测试只看角速度闭环本身。
-    balance_steering_loop(0.0f);                 // 外环 转向环 20ms
+    // 转向外环采用“先延迟、后软启动”的接入策略，避免目标倾角突然阶跃。
+    steering_run_outer_loop(25.0f);               // 外环 转向环 20ms
 
 }
 // **************************** PIT中断函数 ****************************
